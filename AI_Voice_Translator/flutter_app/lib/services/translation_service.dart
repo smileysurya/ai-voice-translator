@@ -113,29 +113,39 @@ class TranslationService {
   }) async {
     final cleanBackendUrl = normalizeUrl(backendUrl);
     final uri = Uri.parse('$cleanBackendUrl/api/translate-text');
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'text': text, 'sourceLang': sourceLang, 'targetLang': targetLang}),
-    ).timeout(const Duration(seconds: 45));
+    
+    try {
+      print('🌐 [API] Translating text: "${text.substring(0, text.length > 30 ? 30 : text.length)}..."');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'text': text, 'sourceLang': sourceLang, 'targetLang': targetLang}),
+      ).timeout(const Duration(seconds: 60));
 
-    if (response.statusCode != 200) {
-      print('❌ API Error (${response.statusCode}) at $uri: ${response.body}');
-      try {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        throw Exception(json['error'] ?? 'Server error ${response.statusCode}');
-      } catch (e) {
-        throw Exception('Server error ${response.statusCode}: ${response.reasonPhrase}');
+      if (response.statusCode != 200) {
+        print('❌ [API] Error ${response.statusCode}: ${response.body}');
+        Map<String, dynamic>? errorJson;
+        try { errorJson = jsonDecode(response.body); } catch (_) {}
+        
+        String errorMsg = errorJson?['error'] ?? 'Server error ${response.statusCode}';
+        if (response.statusCode == 503) errorMsg = 'Backend is starting up... please wait 30 seconds and try again.';
+        throw Exception(errorMsg);
       }
+
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      if (json['success'] != true) throw Exception(json['error'] ?? 'Translation failed');
+      
+      return TranslationResult(
+        transcript: json['transcript'] as String,
+        translation: json['translation'] as String,
+        sourceLang: json['sourceLang'] as String,
+        targetLang: json['targetLang'] as String,
+      );
+    } on TimeoutException {
+      throw Exception('Request timed out. The backend might be sleeping (Render free tier). Please try again in a few seconds.');
+    } catch (e) {
+      rethrow;
     }
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    if (json['success'] != true) throw Exception(json['error'] ?? 'Translation failed');
-    return TranslationResult(
-      transcript: json['transcript'] as String,
-      translation: json['translation'] as String,
-      sourceLang: json['sourceLang'] as String,
-      targetLang: json['targetLang'] as String,
-    );
   }
 
   Future<TranslationResult> _sendToBackend({
@@ -148,43 +158,51 @@ class TranslationService {
   }) async {
     final cleanBackendUrl = normalizeUrl(backendUrl);
     final uri = Uri.parse('$cleanBackendUrl/api/translate');
-    final request = http.MultipartRequest('POST', uri);
+    
+    try {
+      print('🌐 [API] Sending audio: $filename (${audioBytes.length} bytes) to $uri');
+      final request = http.MultipartRequest('POST', uri);
 
-    request.fields['sourceLang'] = sourceLang;
-    request.fields['targetLang'] = targetLang;
-    // Always request text from backend — TTS is handled client-side for free
-    request.fields['outputMode'] = 'text';
+      request.fields['sourceLang'] = sourceLang;
+      request.fields['targetLang'] = targetLang;
+      request.fields['outputMode'] = 'text';
 
-    request.files.add(http.MultipartFile.fromBytes(
-      'audio',
-      audioBytes,
-      filename: filename,
-    ));
+      request.files.add(http.MultipartFile.fromBytes(
+        'audio',
+        audioBytes,
+        filename: filename,
+      ));
 
-    final streamed = await request.send().timeout(const Duration(seconds: 60));
-    final body = await streamed.stream.bytesToString();
+      final streamed = await request.send().timeout(const Duration(seconds: 60));
+      final response = await http.Response.fromStream(streamed);
 
-    if (streamed.statusCode != 200) {
-      print('❌ Multipart Error (${streamed.statusCode}) at $uri: $body');
-      try {
-        final json = jsonDecode(body) as Map<String, dynamic>;
-        throw Exception(json['error'] ?? 'Server error ${streamed.statusCode}');
-      } catch (e) {
-        throw Exception('Server error ${streamed.statusCode}');
+      if (response.statusCode != 200) {
+        print('❌ [API] Multipart Error ${response.statusCode}: ${response.body}');
+        Map<String, dynamic>? errorJson;
+        try { errorJson = jsonDecode(response.body); } catch (_) {}
+        
+        String errorMsg = errorJson?['error'] ?? 'Server error ${response.statusCode}';
+        if (response.statusCode == 503) errorMsg = 'Backend is waking up... please wait and try again.';
+        throw Exception(errorMsg);
       }
-    }
 
-    final json = jsonDecode(body) as Map<String, dynamic>;
-    if (json['success'] != true) {
-      throw Exception(json['error'] ?? 'Translation failed');
-    }
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      if (json['success'] != true) {
+        throw Exception(json['error'] ?? 'Translation failed');
+      }
 
-    return TranslationResult(
-      transcript: json['transcript'] as String,
-      translation: json['translation'] as String,
-      audioBase64: json['audioBase64'] as String?,
-      sourceLang: json['sourceLang'] as String,
-      targetLang: json['targetLang'] as String,
-    );
+      return TranslationResult(
+        transcript: json['transcript'] as String,
+        translation: json['translation'] as String,
+        audioBase64: json['audioBase64'] as String?,
+        sourceLang: json['sourceLang'] as String,
+        targetLang: json['targetLang'] as String,
+      );
+    } on TimeoutException {
+      throw Exception('Request timed out. The backend might be starting up. Please try again.');
+    } catch (e) {
+      print('❌ [API] Unexpected error: $e');
+      rethrow;
+    }
   }
 }

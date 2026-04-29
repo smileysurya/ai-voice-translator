@@ -140,18 +140,22 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
   }
 
   void _onPeerEvent(Map<String, dynamic> data) {
-    print('Peer event: $data');
+    print('👥 [LiveCall] Peer event: ${data['type']} from ${data['id']}');
     if (data['type'] == 'joined') {
       // If we are already in the room, start the WebRTC connection
-      if (_inRoom) _startCall();
+      if (_inRoom) {
+        print('📡 [LiveCall] Starting call because peer joined');
+        _startCall();
+      }
     }
   }
 
   void _onSignalingReceived(Map<String, dynamic> data) async {
     final payload = data['payload'];
-    final type = payload['type'];
-
     if (payload == null) return;
+    
+    final type = payload['type'];
+    print('📡 [LiveCall] Signaling received: $type from ${data['senderId']}');
     
     if (type == 'offer') {
       await _handleOffer(payload);
@@ -164,6 +168,7 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
 
   void _processQueuedCandidates() async {
     if (_peerConnection == null) return;
+    print('📡 [LiveCall] Processing ${_remoteCandidatesQueue.length} queued ICE candidates');
     for (var candidate in _remoteCandidatesQueue) {
       await _peerConnection!.addCandidate(candidate);
     }
@@ -171,19 +176,25 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
   }
 
   void _onCallStatusReceived(Map<String, dynamic> data) {
+    final status = data['status'];
+    print('📞 [LiveCall] Call status from peer: $status');
     setState(() {
-      _callStatus = data['status'];
+      _callStatus = status;
       if (_callStatus == 'connected') _startTimers();
       if (_callStatus == 'ended') _leaveRoom();
     });
   }
 
   void _onError(String error) {
+    print('❌ [LiveCall] Error: $error');
     setState(() => _isProcessing = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: kError, content: Text(error)));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: kError, content: Text(error)));
+    }
   }
 
   Future<void> _startCall() async {
+    print('📡 [LiveCall] Initiating WebRTC offer...');
     setState(() => _callStatus = 'calling');
     _peerConnection = await _createPeerConnection();
     
@@ -306,6 +317,7 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
   void _joinRoom(String code) {
     if (code.isEmpty || code.length < 3) return;
     
+    print('👥 [LiveCall] Joining room: $code');
     setState(() {
       _roomCode = code;
       _inRoom = true;
@@ -317,17 +329,18 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
     _socket.connect(_backendUrl);
     
     // Periodically check connection and join
+    int attempts = 0;
     Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      attempts++;
       if (_socket.isConnected) {
+        print('🟢 [LiveCall] Socket connected, sending join_room for $code');
         _socket.joinRoom(code);
         timer.cancel();
-      }
-      if (timer.tick > 10) { // Timeout after 5 seconds
+      } else if (attempts > 20) { // Timeout after 10 seconds
         timer.cancel();
-        if (!_socket.isConnected) {
-          _onError('Connection timeout. Please check your backend URL.');
-          setState(() => _inRoom = false);
-        }
+        print('❌ [LiveCall] Socket connection timeout for $code');
+        _onError('Connection timeout. Please check your backend URL and internet.');
+        if (mounted) setState(() => _inRoom = false);
       }
     });
   }

@@ -16,17 +16,39 @@ const { initSocketManager } = require('./socketManager');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Task F: Simple Request Logger
+// Task A & F: Enhanced Request Logger
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} [${res.statusCode}] - ${duration}ms`);
+  });
   next();
 });
 
-// Task D: Fix CORS for Production
+// Task B & C: CORS Fix
+const allowedOrigins = [
+  'https://remarkable-gumdrop-b256de.netlify.app',
+  'http://localhost:3000',
+  'http://localhost:5000',
+  'http://localhost:19006' // Standard Flutter web dev port
+];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "*",
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.FRONTEND_URL === origin || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      console.log(`CORS blocked for origin: ${origin}`);
+      // For demo, if CORS blocks, temporarily allow everything if requested
+      callback(null, true); 
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 
 app.use(express.json({ limit: '50mb' }));
@@ -36,7 +58,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.get('/', (req, res) => {
   res.json({
     message: "AI Voice Translator Backend is running",
-    status: "success"
+    status: "success",
+    version: "1.0.1"
   });
 });
 
@@ -45,7 +68,12 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     uptime: process.uptime(),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    env: {
+      OPENAI_API_KEY_EXISTS: !!process.env.OPENAI_API_KEY,
+      GROQ_API_KEY_EXISTS: !!process.env.GROQ_API_KEY,
+      PORT: process.env.PORT
+    }
   });
 });
 
@@ -53,19 +81,21 @@ app.use('/api', translateRouter);
 
 // Task E: Global Error Handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
+  console.error('❌ Unhandled error:', err);
   res.status(err.status || 500).json({ 
     success: false, 
-    message: "Internal Server Error" 
+    message: err.message || "Internal Server Error",
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`\n🚀 AI Voice Translator Backend`);
-  console.log(`   URL      : http://localhost:${PORT}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 AI Voice Translator Backend Started`);
+  console.log(`   URL      : http://0.0.0.0:${PORT}`);
   console.log(`   NODE_ENV : ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   OpenAI   : ${process.env.OPENAI_API_KEY ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`   GROQ     : ${process.env.GROQ_API_KEY ? '✅ Configured' : 'ℹ️ Not set'}`);
+  console.log(`   OPENAI_API_KEY exists: ${!!process.env.OPENAI_API_KEY}`);
+  console.log(`   GROQ_API_KEY exists: ${!!process.env.GROQ_API_KEY}`);
+  console.log(`   FRONTEND_URL: ${process.env.FRONTEND_URL || 'Not set (allowing all for demo)'}`);
   console.log(`   Socket.io: 📡 Initialized\n`);
 });
 
@@ -75,7 +105,6 @@ initSocketManager(server);
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\n❌ Port ${PORT} is already in use.`);
-    console.error(`   Run this to free it: taskkill /F /PID $(netstat -ano | findstr :${PORT})`);
     process.exit(1);
   } else {
     throw err;

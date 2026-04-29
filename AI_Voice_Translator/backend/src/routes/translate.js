@@ -43,39 +43,44 @@ const upload = multer({
 
 router.post('/translate', upload.single('audio'), async (req, res) => {
   let filePath = null;
+  const requestId = Date.now().toString().slice(-6);
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'No audio file provided' });
+    if (!req.file) {
+      console.log(`[${requestId}] ⚠️ No audio file provided`);
+      return res.status(400).json({ success: false, error: 'No audio file provided' });
+    }
 
     filePath = req.file.path;
     const { sourceLang = 'auto', targetLang = 'en', outputMode = 'text' } = req.body;
 
-    console.log(`📥 Audio: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)}KB) | ${sourceLang} → ${targetLang} | ${outputMode}`);
+    console.log(`[${requestId}] 📥 Audio: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)}KB) | ${sourceLang} → ${targetLang} | ${outputMode}`);
 
     // 1. Transcribe
-    console.log('🎤 Transcribing with Whisper...');
+    console.log(`[${requestId}] 🎤 STT Start (Whisper)...`);
     const transcript = await transcribeAudio(filePath, sourceLang);
     if (!transcript || !transcript.trim()) {
+      console.log(`[${requestId}] ⚠️ Transcription empty`);
       return res.status(422).json({ success: false, error: 'Could not transcribe. Please speak clearly and try again.' });
     }
-    console.log(`📝 Transcript: "${transcript}"`);
+    console.log(`[${requestId}] 📝 Transcript: "${transcript}"`);
 
     // 2. Translate
-    console.log('🌐 Translating with GPT-4o-mini...');
+    console.log(`[${requestId}] 🌐 Translation Start...`);
     const translation = await translateText(transcript, sourceLang, targetLang);
-    console.log(`✅ Translation: "${translation}"`);
+    console.log(`[${requestId}] ✅ Translation: "${translation}"`);
 
     // 3. TTS (speaker mode only)
     let audioBase64 = null;
     if (outputMode === 'speaker') {
-      console.log('🔊 Synthesizing TTS...');
+      console.log(`[${requestId}] 🔊 TTS Start...`);
       const buf = await synthesizeSpeech(translation);
       audioBase64 = buf.toString('base64');
-      console.log(`🔊 Audio: ${(buf.length / 1024).toFixed(1)}KB`);
+      console.log(`[${requestId}] 🔊 Audio: ${(buf.length / 1024).toFixed(1)}KB`);
     }
 
     res.json({ success: true, transcript, translation, audioBase64, sourceLang, targetLang, timestamp: new Date().toISOString() });
   } catch (err) {
-    console.error('❌ Pipeline error:', err.message);
+    console.error(`[${requestId}] ❌ Pipeline error:`, err.message);
     res.status(500).json({ success: false, error: err.message || 'Translation failed. Please try again.' });
   } finally {
     if (filePath && fs.existsSync(filePath)) {
@@ -86,17 +91,18 @@ router.post('/translate', upload.single('audio'), async (req, res) => {
 
 // ── Text-only translation (no audio) ─────────────────────────────────
 router.post('/translate-text', express.json(), async (req, res) => {
+  const requestId = Date.now().toString().slice(-6);
   try {
     const { text, sourceLang = 'auto', targetLang = 'en' } = req.body;
     if (!text || !text.trim()) {
       return res.status(400).json({ success: false, error: 'No text provided' });
     }
-    console.log(`📝 Text translate: "${text.substring(0, 60)}…" | ${sourceLang} → ${targetLang}`);
+    console.log(`[${requestId}] 📝 Text translate: "${text.substring(0, 60)}…" | ${sourceLang} → ${targetLang}`);
     const translation = await translateText(text.trim(), sourceLang, targetLang);
-    console.log(`✅ Translation: "${translation}"`);
+    console.log(`[${requestId}] ✅ Translation: "${translation}"`);
     res.json({ success: true, transcript: text.trim(), translation, sourceLang, targetLang, timestamp: new Date().toISOString() });
   } catch (err) {
-    console.error('❌ Text translate error:', err.message);
+    console.error(`[${requestId}] ❌ Text translate error:`, err.message);
     res.status(500).json({ success: false, error: err.message || 'Translation failed' });
   }
 });

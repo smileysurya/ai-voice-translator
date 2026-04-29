@@ -84,20 +84,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       try {
         final status = await Permission.microphone.request();
         if (!status.isGranted) {
-          _showError('Microphone permission denied');
+          _showError('Microphone permission denied. Please enable it in system settings.');
           return;
         }
       } catch (_) {
-        // On Windows desktop, permission is granted by the OS
+        // On Windows desktop, permission is granted by the OS or handled differently
       }
     }
+    
     setState(() { _isRecording = true; _error = null; _transcript = ''; _translation = ''; });
     _fadeCtrl.reverse();
     try {
       await _recorder.start();
     } catch (e) {
       setState(() { _isRecording = false; });
-      _showError('Could not start recording: $e');
+      String msg = e.toString();
+      if (kIsWeb && msg.contains('Permission denied')) {
+        msg = 'Microphone permission denied or browser recording not supported. Please allow microphone access in your browser settings.';
+      }
+      _showError('Recording Error: $msg');
     }
   }
 

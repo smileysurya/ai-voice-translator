@@ -25,34 +25,42 @@ class SocketService {
   bool get isConnected => _socket?.connected ?? false;
 
   void connect(String backendUrl) {
-    if (_socket != null && _socket!.connected) return;
+    if (_socket != null && _socket!.connected) {
+      print('ℹ️ Socket already connected');
+      return;
+    }
 
     final cleanUrl = normalizeUrl(backendUrl);
+    print('🔌 [Socket] Connecting to: $cleanUrl (Websocket only)');
+    
     _socket = IO.io(cleanUrl, <String, dynamic>{
       'transports': ['websocket'],
-      'autoConnect': false,
+      'autoConnect': true,
+      'forceNew': true,
     });
 
-    _socket!.connect();
+    // We still keep listeners but autoConnect handles the initial connection
 
     _socket!.onConnect((_) {
-      print('🟢 Connected to WebSocket Server at $cleanUrl');
+      print('🟢 [Socket] Connected to server at $cleanUrl');
     });
 
     _socket!.onConnectError((data) {
-      print('❌ Socket Connection Error: $data');
-      _errorController.add('Socket connection error');
+      print('❌ [Socket] Connection Error: $data');
+      _errorController.add('Socket connection error: $data');
     });
 
-    _socket!.onDisconnect((_) {
-      print('🔴 Disconnected from WebSocket Server');
+    _socket!.onDisconnect((reason) {
+      print('🔴 [Socket] Disconnected: $reason');
     });
 
     _socket!.on('translated_message', (data) {
+      print('📡 [Socket] Received translated_message');
       _messageController.add(Map<String, dynamic>.from(data));
     });
 
     _socket!.on('message_sent_ack', (data) {
+      print('📡 [Socket] Received message_sent_ack');
       // Echo back what we sent, for local history display
       final echo = Map<String, dynamic>.from(data);
       echo['isMe'] = true;
@@ -60,34 +68,44 @@ class SocketService {
     });
 
     _socket!.on('peer_joined', (data) {
+      print('👥 [Socket] Peer joined: ${data['id']}');
       _peerEventController.add({...Map<String, dynamic>.from(data), 'type': 'joined'});
     });
 
     _socket!.on('peer_left', (data) {
+      print('👥 [Socket] Peer left: ${data['id']}');
       _peerEventController.add({...Map<String, dynamic>.from(data), 'type': 'left'});
     });
 
     _socket!.on('socket_error', (data) {
       final msg = data['message'] ?? 'Unknown socket error';
+      print('❌ [Socket] Server Error: $msg');
       _errorController.add(msg.toString());
     });
 
     _socket!.on('webrtc_signal', (data) {
+      print('📡 [Socket] Received WebRTC signal');
       _signalingController.add(Map<String, dynamic>.from(data));
     });
 
     _socket!.on('call_status', (data) {
+      print('📞 [Socket] Received call_status: ${data['status']}');
       _callStatusController.add(Map<String, dynamic>.from(data));
     });
   }
 
   void joinRoom(String roomCode) {
-    if (!isConnected) return;
+    if (!isConnected) {
+      print('⚠️ [Socket] Cannot join room: not connected');
+      return;
+    }
+    print('👥 [Socket] Joining room: $roomCode');
     _socket!.emit('join_room', roomCode);
   }
 
   void leaveRoom(String roomCode) {
     if (!isConnected) return;
+    print('👋 [Socket] Leaving room: $roomCode');
     _socket!.emit('leave_room', roomCode);
   }
 
@@ -97,7 +115,11 @@ class SocketService {
     required String targetLang,
     required String audioBase64,
   }) {
-    if (!isConnected) return;
+    if (!isConnected) {
+      print('⚠️ [Socket] Cannot send voice: not connected');
+      return;
+    }
+    print('🎤 [Socket] Sending voice message to room $roomCode');
     _socket!.emit('voice_message', {
       'roomCode': roomCode,
       'sourceLang': sourceLang,
@@ -108,6 +130,7 @@ class SocketService {
 
   void sendSignaling({required String roomCode, required Map<String, dynamic> payload}) {
     if (!isConnected) return;
+    print('📡 [Socket] Sending signaling payload');
     _socket!.emit('webrtc_signal', {
       'roomCode': roomCode,
       'payload': payload,
@@ -116,6 +139,7 @@ class SocketService {
 
   void sendCallStatus({required String roomCode, required String status}) {
     if (!isConnected) return;
+    print('📞 [Socket] Sending call status: $status');
     _socket!.emit('call_status', {
       'roomCode': roomCode,
       'status': status,

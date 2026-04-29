@@ -40,13 +40,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _save() async {
+    final cleanUrl = normalizeUrl(_urlCtrl.text.trim());
     await _translationService.saveSettings(TranslationSettings(
-      backendUrl: _urlCtrl.text.trim(),
+      backendUrl: cleanUrl,
       sourceLang: _sourceLang.code,
       targetLang: _targetLang.code,
       outputMode: _outputMode,
     ));
-    setState(() => _saved = true);
+    setState(() {
+      _urlCtrl.text = cleanUrl;
+      _saved = true;
+    });
     Future.delayed(const Duration(seconds: 2), () { if (mounted) setState(() => _saved = false); });
   }
 
