@@ -109,6 +109,8 @@ class TranslationService {
     required String text,
     required String sourceLang,
     required String targetLang,
+    required String backendUrl,
+  }) async {
     final cleanBackendUrl = normalizeUrl(backendUrl);
     final uri = Uri.parse('$cleanBackendUrl/api/translate-text');
     final response = await http.post(

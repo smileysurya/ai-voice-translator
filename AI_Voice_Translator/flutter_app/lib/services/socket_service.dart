@@ -44,10 +44,6 @@ class SocketService {
       _errorController.add('Socket connection error');
     });
 
-    _socket!.onConnectTimeout((data) {
-      print('⏳ Socket Connection Timeout: $data');
-    });
-
     _socket!.onDisconnect((_) {
       print('🔴 Disconnected from WebSocket Server');
     });
