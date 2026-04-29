@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const mongoose = require('mongoose');
+const fs = require('fs');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -12,8 +12,6 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 const translateRouter = require('./routes/translate');
-const userRouter = require('./routes/user');
-const syncRouter = require('./routes/sync');
 const { initSocketManager } = require('./socketManager');
 
 const app = express();
@@ -28,18 +26,6 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 app.use('/api', translateRouter);
-app.use('/api/user', userRouter);
-app.use('/api/sync', syncRouter);
-
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI;
-if (MONGODB_URI) {
-  mongoose.connect(MONGODB_URI)
-    .then(() => console.log('🍃 MongoDB connected successfully'))
-    .catch(err => console.error('❌ MongoDB connection error:', err));
-} else {
-  console.warn('⚠️ MONGODB_URI missing in .env - persistence disabled');
-}
 
 app.get('/health', (req, res) => {
   res.json({
