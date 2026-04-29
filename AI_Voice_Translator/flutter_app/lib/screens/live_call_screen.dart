@@ -13,6 +13,7 @@ import '../constants.dart';
 import '../services/socket_service.dart';
 import '../services/history_service.dart';
 import '../models/translation_record.dart';
+import '../services/audio_recorder_service.dart';
 
 class LiveCallScreen extends StatefulWidget {
   final String? initialRoom;
@@ -100,7 +101,7 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
   @override
   void dispose() {
     _pulseCtrl.dispose();
-    _recorder.dispose();
+    _recorderService.dispose(); // Fixed reference
     _audioPlayer.dispose(); // Dispose premium player
     _localStream?.getTracks().forEach((track) => track.stop());
     _localStream?.dispose();
@@ -412,24 +413,21 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
   }
 
   Future<void> _startRecording() async {
-    if (await _recorder.hasPermission()) {
+    if (await _recorderService.hasPermission()) {
       setState(() => _isRecording = true);
       _pulseCtrl.repeat(reverse: true);
-      
-      final stream = await _recorder.startStream(const RecordConfig(
-        encoder: AudioEncoder.opus,
-        numChannels: 1,
-        sampleRate: 16000,
-      ));
-      
-      // We will collect chunks and send upon release
-      _audioChunks.clear();
-      _streamSub = stream.listen((data) => _audioChunks.addAll(data));
+      try {
+        await _recorderService.start();
+      } catch (e) {
+        print('❌ [LiveCall] start error: $e');
+        setState(() => _isRecording = false);
+      }
     }
   }
 
-  List<int> _audioChunks = [];
-  StreamSubscription? _streamSub;
+  // No longer need raw chunk collection; service returns full audio file.
+  // List<int> _audioChunks = [];
+  // StreamSubscription? _streamSub;
 
   Future<void> _stopRecording() async {
     if (!_isRecording) return;
@@ -440,11 +438,9 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
       _isProcessing = true;
     });
     
-    await _recorder.stop();
-    await _streamSub?.cancel();
-    
-    if (_audioChunks.isNotEmpty) {
-      final base64Audio = base64Encode(Uint8List.fromList(_audioChunks));
+    final audioData = await _recorderService.stopAndGetBytes();
+    if (audioData != null && audioData.bytes.isNotEmpty) {
+      final base64Audio = base64Encode(audioData.bytes);
       _socket.sendVoiceMessage(
         roomCode: _roomCode,
         sourceLang: _myLang.code,
@@ -452,7 +448,7 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
         audioBase64: base64Audio,
       );
     } else {
-      setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
