@@ -2,7 +2,8 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
 const { transcribeAudio } = require('./services/stt');
-const { translateText } = require('./services/translator');
+const { translateWithGoogle } = require('./services/googleTranslate');
+const { synthesizeWithPolly } = require('./services/polly');
 
 function initSocketManager(server) {
   const io = new Server(server, {
@@ -58,27 +59,29 @@ function initSocketManager(server) {
         const audioBuffer = Buffer.from(audioBase64, 'base64');
         fs.writeFileSync(tempPath, audioBuffer);
         
-        // 1. Transcribe the audio
-        console.log(`🎤 [Socket] STT Start for ${socket.id}...`);
+        // 1. Transcribe the audio (Whisper)
+        console.log(`🎤 [Socket] STT Start (Whisper) for ${socket.id}...`);
         const transcript = await transcribeAudio(tempPath, sourceLang);
-        if (!transcript) {
-          console.log(`⚠️ [Socket] STT returned empty for ${socket.id}`);
-          throw new Error('Transcription empty');
-        }
+        if (!transcript) throw new Error('Transcription empty');
         console.log(`📝 [Socket] Transcript: "${transcript}"`);
         
-        // 2. Translate the transcript
-        console.log(`🌐 [Socket] Translation Start...`);
-        const translation = await translateText(transcript, sourceLang, targetLang);
+        // 2. Translate the transcript (Google Translate)
+        console.log(`🌐 [Socket] Translation Start (Google)...`);
+        const translation = await translateWithGoogle(transcript, sourceLang, targetLang);
         console.log(`✅ [Socket] Translation Success: "${translation}"`);
         
-        // 3. Broadcast only to other members in the room
+        // 3. Generate TTS (Amazon Polly)
+        console.log(`🔊 [Socket] TTS Start (Polly)...`);
+        const ttsAudioBase64 = await synthesizeWithPolly(translation, targetLang);
+        
+        // 4. Broadcast to other members in the room
         const payload = {
           senderId: socket.id,
           sourceLang,
           targetLang,
           originalText: transcript,
           translatedText: translation,
+          audioBase64: ttsAudioBase64, // The premium voice audio
           timestamp: new Date().toISOString(),
         };
         

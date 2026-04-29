@@ -8,6 +8,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:just_audio/just_audio.dart';
 import '../constants.dart';
 import '../services/socket_service.dart';
 import '../services/history_service.dart';
@@ -22,7 +23,8 @@ class LiveCallScreen extends StatefulWidget {
 
 class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStateMixin {
   final SocketService _socket = SocketService();
-  final AudioRecorder _recorder = AudioRecorder();
+  final AudioRecorderService _recorderService = AudioRecorderService();
+  final AudioPlayer _audioPlayer = AudioPlayer();
   final FlutterTts _tts = FlutterTts();
   
   bool _inRoom = false;
@@ -99,6 +101,7 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
   void dispose() {
     _pulseCtrl.dispose();
     _recorder.dispose();
+    _audioPlayer.dispose(); // Dispose premium player
     _localStream?.getTracks().forEach((track) => track.stop());
     _localStream?.dispose();
     _peerConnection?.dispose();
@@ -123,19 +126,31 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
     );
     await _historyService.insertRecord(record);
 
-    setState(() => _messages.add(data));
+    if (mounted) setState(() => _messages.add(data));
     
-    // Auto-play the TTS if it's from someone else
+    // Auto-play the translation
     if (data['isMe'] != true) {
+      final audioBase64 = data['audioBase64'];
       final text = data['translatedText'];
       final lang = data['targetLang'];
-      if (text != null) {
+
+      if (audioBase64 != null) {
+        print('🔊 [LiveCall] Playing premium Polly audio');
+        try {
+          final bytes = base64Decode(audioBase64);
+          await _audioPlayer.setAudioSource(MyCustomSource(bytes));
+          await _audioPlayer.play();
+        } catch (e) {
+          print('❌ [LiveCall] Polly playback failed: $e');
+        }
+      } else if (text != null) {
+        print('🔊 [LiveCall] Playing fallback local TTS');
         if (lang != 'auto') await _tts.setLanguage(lang);
         await _tts.speak(text);
       }
     } else {
       // It's our own ack coming back, means processing is done
-      setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -299,19 +314,32 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
       setState(() => _secondsElapsed++);
     });
 
-    // Start auto-translation timer (every 5 seconds)
-    _autoTranslateTimer?.cancel();
-    _autoTranslateTimer = Timer.periodic(const Duration(seconds: 6), (timer) {
-      if (_callStatus == 'connected') _performAutoTranslation();
-    });
+    // Start auto-translation loop
+    _performAutoTranslation();
   }
 
   void _performAutoTranslation() async {
+    if (!_inRoom || _callStatus != 'connected') return;
+    
     // This will trigger a short recording and send it
     if (_isRecording) return;
-    await _startRecording();
-    await Future.delayed(const Duration(seconds: 4));
-    await _stopRecording();
+    
+    try {
+      await _startRecording();
+      await Future.delayed(const Duration(seconds: 5)); // Record for 5 seconds
+      if (mounted) {
+        await _stopRecording();
+        // Immediately start next recording cycle for seamless coverage
+        _performAutoTranslation();
+      }
+    } catch (e) {
+      print('❌ [LiveCall] Translation cycle error: $e');
+      if (mounted) {
+        setState(() { _isRecording = false; _isProcessing = false; });
+        // Retry after a short delay if it failed
+        Future.delayed(const Duration(seconds: 2), _performAutoTranslation);
+      }
+    }
   }
 
   void _joinRoom(String code) {
@@ -718,6 +746,25 @@ class _LiveCallScreenState extends State<LiveCallScreen> with TickerProviderStat
           Text(label, style: GoogleFonts.inter(color: Colors.white70, fontSize: 12)),
         ],
       ),
+    );
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+class MyCustomSource extends StreamAudioSource {
+  final List<int> bytes;
+  MyCustomSource(this.bytes);
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    start ??= 0;
+    end ??= bytes.length;
+    return StreamAudioResponse(
+      sourceLength: bytes.length,
+      contentLength: end - start,
+      offset: start,
+      contentType: 'audio/mpeg',
+      stream: Stream.value(bytes.sublist(start, end)),
     );
   }
 }
