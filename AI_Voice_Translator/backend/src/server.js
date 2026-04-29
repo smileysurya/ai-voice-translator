@@ -62,8 +62,11 @@ app.use((err, req, res, next) => {
 
 const server = app.listen(PORT, () => {
   console.log(`\n🚀 AI Voice Translator Backend`);
-  console.log(`   URL  : http://localhost:${PORT}`);
-  console.log(`   OpenAI: ${process.env.OPENAI_API_KEY ? '✅ Configured' : '❌ Missing'}\n`);
+  console.log(`   URL      : http://localhost:${PORT}`);
+  console.log(`   NODE_ENV : ${process.env.NODE_ENV || 'development'}`);
+  console.log(`   OpenAI   : ${process.env.OPENAI_API_KEY ? '✅ Configured' : '❌ Missing'}`);
+  console.log(`   GROQ     : ${process.env.GROQ_API_KEY ? '✅ Configured' : 'ℹ️ Not set'}`);
+  console.log(`   Socket.io: 📡 Initialized\n`);
 });
 
 // Task I: Ensure Socket.io Still Works

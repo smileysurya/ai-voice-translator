@@ -105,4 +105,17 @@ const List<Language> kLanguages = [
 ];
 
 // ── Backend Configuration ──────────────────────────────────────────
-const String kDefaultBackendUrl = 'http://192.168.1.2:3000';
+const String kDefaultBackendUrl = 'https://ai-voice-translator-lnvf.onrender.com';
+
+String normalizeUrl(String url) {
+  String cleanUrl = url.trim();
+  // Remove trailing slashes
+  while (cleanUrl.endsWith('/')) {
+    cleanUrl = cleanUrl.substring(0, cleanUrl.length - 1);
+  }
+  // Ensure https:// or http://
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    cleanUrl = 'https://$cleanUrl';
+  }
+  return cleanUrl;
+}

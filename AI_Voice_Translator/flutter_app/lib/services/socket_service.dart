@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../constants.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
@@ -26,7 +27,8 @@ class SocketService {
   void connect(String backendUrl) {
     if (_socket != null && _socket!.connected) return;
 
-    _socket = IO.io(backendUrl, <String, dynamic>{
+    final cleanUrl = normalizeUrl(backendUrl);
+    _socket = IO.io(cleanUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
     });
@@ -34,7 +36,16 @@ class SocketService {
     _socket!.connect();
 
     _socket!.onConnect((_) {
-      print('🟢 Connected to WebSocket Server');
+      print('🟢 Connected to WebSocket Server at $cleanUrl');
+    });
+
+    _socket!.onConnectError((data) {
+      print('❌ Socket Connection Error: $data');
+      _errorController.add('Socket connection error');
+    });
+
+    _socket!.onConnectTimeout((data) {
+      print('⏳ Socket Connection Timeout: $data');
     });
 
     _socket!.onDisconnect((_) {

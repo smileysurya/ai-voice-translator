@@ -4,6 +4,9 @@ import '../constants.dart';
 import '../services/translation_service.dart';
 import '../services/auth_service.dart';
 
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
   @override
@@ -47,6 +50,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Future.delayed(const Duration(seconds: 2), () { if (mounted) setState(() => _saved = false); });
   }
 
+  Future<void> _testConnection() async {
+    final cleanUrl = normalizeUrl(_urlCtrl.text.trim());
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Testing connection...'), duration: Duration(seconds: 1)));
+    
+    try {
+      final uri = Uri.parse('$cleanUrl/health');
+      final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+      
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: kAccent,
+          content: Text('✅ Connected! Status: ${data['status']} (Uptime: ${data['uptime'].toStringAsFixed(1)}s)'),
+        ));
+      } else {
+        throw Exception('Server returned ${resp.statusCode}');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: kError,
+        content: Text('❌ Connection Failed: $e'),
+      ));
+    }
+  }
+
   @override
   void dispose() {
     _urlCtrl.dispose();
@@ -71,6 +99,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           _sectionTitle('Backend'),
                           _card([
                             _textField('Backend URL', _urlCtrl, kDefaultBackendUrl, Icons.link_rounded),
+                            _divider(),
+                            ListTile(
+                              leading: const Icon(Icons.bolt_rounded, color: kPrimaryLight, size: 18),
+                              title: Text('Test Connection', style: GoogleFonts.inter(fontSize: 14, color: kTextPrimary)),
+                              trailing: const Icon(Icons.chevron_right_rounded, color: kTextHint, size: 18),
+                              onTap: _testConnection,
+                            ),
                           ]),
                           const SizedBox(height: 20),
                           _sectionTitle('Default Languages'),

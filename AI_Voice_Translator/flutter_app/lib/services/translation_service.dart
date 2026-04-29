@@ -109,18 +109,22 @@ class TranslationService {
     required String text,
     required String sourceLang,
     required String targetLang,
-    required String backendUrl,
-  }) async {
-    final uri = Uri.parse('$backendUrl/api/translate-text');
+    final cleanBackendUrl = normalizeUrl(backendUrl);
+    final uri = Uri.parse('$cleanBackendUrl/api/translate-text');
     final response = await http.post(
       uri,
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'text': text, 'sourceLang': sourceLang, 'targetLang': targetLang}),
-    ).timeout(const Duration(seconds: 30));
+    ).timeout(const Duration(seconds: 45));
 
     if (response.statusCode != 200) {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      throw Exception(json['error'] ?? 'Server error ${response.statusCode}');
+      print('❌ API Error (${response.statusCode}) at $uri: ${response.body}');
+      try {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        throw Exception(json['error'] ?? 'Server error ${response.statusCode}');
+      } catch (e) {
+        throw Exception('Server error ${response.statusCode}: ${response.reasonPhrase}');
+      }
     }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
     if (json['success'] != true) throw Exception(json['error'] ?? 'Translation failed');
@@ -140,7 +144,8 @@ class TranslationService {
     required OutputMode outputMode,
     required String backendUrl,
   }) async {
-    final uri = Uri.parse('$backendUrl/api/translate');
+    final cleanBackendUrl = normalizeUrl(backendUrl);
+    final uri = Uri.parse('$cleanBackendUrl/api/translate');
     final request = http.MultipartRequest('POST', uri);
 
     request.fields['sourceLang'] = sourceLang;
@@ -158,8 +163,13 @@ class TranslationService {
     final body = await streamed.stream.bytesToString();
 
     if (streamed.statusCode != 200) {
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      throw Exception(json['error'] ?? 'Server error ${streamed.statusCode}');
+      print('❌ Multipart Error (${streamed.statusCode}) at $uri: $body');
+      try {
+        final json = jsonDecode(body) as Map<String, dynamic>;
+        throw Exception(json['error'] ?? 'Server error ${streamed.statusCode}');
+      } catch (e) {
+        throw Exception('Server error ${streamed.statusCode}');
+      }
     }
 
     final json = jsonDecode(body) as Map<String, dynamic>;

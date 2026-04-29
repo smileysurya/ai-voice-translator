@@ -18,7 +18,7 @@ function initSocketManager(server) {
     // Join a specific Walkie-Talkie room
     socket.on('join_room', (roomCode) => {
       socket.join(roomCode);
-      console.log(`👥 Client ${socket.id} joined room ${roomCode}`);
+      console.log(`👥 Client ${socket.id} joined room: ${roomCode}`);
       // Notify others in room
       socket.to(roomCode).emit('peer_joined', { id: socket.id });
     });
@@ -26,7 +26,7 @@ function initSocketManager(server) {
     // Leave room
     socket.on('leave_room', (roomCode) => {
       socket.leave(roomCode);
-      console.log(`👋 Client ${socket.id} left room ${roomCode}`);
+      console.log(`👋 Client ${socket.id} left room: ${roomCode}`);
       socket.to(roomCode).emit('peer_left', { id: socket.id });
     });
 
